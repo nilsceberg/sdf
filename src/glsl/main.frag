@@ -2,6 +2,8 @@ const float STEP_SIZE = 0.001;
 const float MAX_RANGE = 10.0;
 const float EPSILON = 0.00001;
 
+#define PI 3.1415926538
+
 // All components are in the range [0…1], including hue.
 vec3 hsv2rgb(vec3 c)
 {
@@ -118,14 +120,33 @@ vec3 raytrace(vec3 ray) {
 		// Cast ray toward light source to see if we are reached by it.
 		// Add a small margin to the SDF so that we are outside the shape
 		// we're tracing from.
-		if (length(SUN - raymarch(pointAboveSurface, SUN, (STEP_SIZE - sdf) + EPSILON)) < EPSILON) {
-			// Hit something!
-		} 
-		else {
-			// Otherwise, we are in shadow.
-			color *= 0.4; // ambient
+		float illumination = 0.0; // ambient
+		float maxIllumination = 0.0;
+
+		vec3 light = SUN;
+		vec3 lightDir = light - point;
+		float lightSize = 0.05;
+
+		vec3 lightX = normalize(cross(lightDir, vec3(0.0, 1.0, 0.0)));
+		vec3 lightY = normalize(cross(lightX, lightDir));
+
+		// TODO: distribution
+		// TODO: use the glow effect for soft shadows/ambient occlusion, maybe?
+		for (float i = 0.0; i<4.0; i += 1.0) {
+			float r = lightSize / 4.0 * i;
+			for (float j = 0.0; j<(i+1.0); j += 1.0) {
+				float a = 2.0*PI/(i+1.0) * j;
+				vec3 light = light + r * (cos(a) * lightX + sin(a) * lightY);
+				if (length(light - raymarch(pointAboveSurface, light, (STEP_SIZE - sdf) + EPSILON)) < EPSILON) {
+					illumination += 1.0;
+				} 
+				maxIllumination += 1.0;
+			}
 		}
 
+		illumination = illumination / maxIllumination * 0.7 + 0.3;
+
+		color *= illumination; // ambient
 		finalColor = diffuse(point, normal, color);
 	}
 
