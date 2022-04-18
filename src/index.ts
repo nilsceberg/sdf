@@ -5,12 +5,6 @@ const identity = <T>(x: T) => x;
 
 const compose = (f: TransformFunction, g: TransformFunction) => (expr: string) => g(f(expr));
 
-const float = (x: number) => {
-    const str = x.toString();
-    if (str.indexOf(".") !== -1) return str;
-    else return str + ".0";
-}
-
 type Property = "sdf" | "normal" | "color";
 
 const PropertyTypes: {[type: string]: string} = {
@@ -23,15 +17,17 @@ interface Expr<T> {
     compile(): string;
 }
 
-// Extends strings to work as values.
+// Extends strings to work as Exprs.
 declare global {
-    interface String extends Expr<String> {
+    interface String extends Expr<Vec3> {
+    }
 
+    interface String extends Expr<Float> {
     }
 }
 
 String.prototype.compile = function(): string {
-    return this as string;
+    return `(${this})`;
 }
 
 class Vec3 implements Expr<Vec3>{
@@ -48,9 +44,29 @@ class Vec3 implements Expr<Vec3>{
     }
 
     compile(): string {
-        return `vec3(${float(this.x)}, ${float(this.y)}, ${float(this.z)})`;
+        return `vec3(${this.x.compile()}, ${this.y.compile()}, ${this.z.compile()})`;
     }
 }
+
+// The solution for Vec3 doesn't work great for floats if we want to be able to
+// implement the interface for Number, since Node doesn't differentiate between integers and floats.
+// We assume that numbers are floats for now, and may have to handle integers later.
+
+interface Float extends Expr<Float> {
+}
+
+// Extends numbers to work as Expr<FLoat>.
+declare global {
+    interface Number extends Expr<Float> {
+    }
+}
+
+Number.prototype.compile = function(): string {
+    const str = this.toString();
+    if (str.indexOf(".") !== -1) return str;
+    else return str + ".0";
+}
+
 
 class Material {
     color: Expr<Vec3>;
@@ -145,9 +161,9 @@ abstract class Transform extends Scene {
 }
 
 class Translate extends Transform {
-    translate: Vec3;
+    translate: Expr<Vec3>;
 
-    constructor(translate: Vec3, scene: Scene)  {
+    constructor(translate: Expr<Vec3>, scene: Scene)  {
         super(scene);
         this.translate = translate;
     }
@@ -222,15 +238,15 @@ abstract class BinaryOperator extends Operator {
 }
 
 class Sphere extends Shape {
-    radius: number;
+    radius: Expr<Float>;
 
-    constructor(radius: number, material?: Material) {
+    constructor(radius: Expr<Float>, material?: Material) {
         super(material);
         this.radius = radius;
     }
 
     protected override sdf(transformer: TransformFunction): string {
-        return `length(point - ${transformer(Vec3.Origin.compile())}) - ${float(this.radius)}`;
+        return `length(point - ${transformer(Vec3.Origin.compile())}) - ${this.radius.compile()}`;
     }
 
     protected override normal(transformer: TransformFunction): string {
@@ -239,9 +255,9 @@ class Sphere extends Shape {
 }
 
 class Plane extends Shape {
-    #normal: Vec3;
+    #normal: Expr<Vec3>;
 
-    constructor(normal: Vec3, material?: Material) {
+    constructor(normal: Expr<Vec3>, material?: Material) {
         super(material);
         this.#normal = normal;
     }
@@ -256,9 +272,9 @@ class Plane extends Shape {
 }
 
 class Ground extends Shape {
-    #normal: Vec3;
+    #normal: Expr<Vec3>;
 
-    constructor(material?: Material, normal: Vec3 = new Vec3(0, 1, 0)) {
+    constructor(material?: Material, normal: Expr<Vec3> = new Vec3(0, 1, 0)) {
         super(material);
         this.#normal = normal;
     }
@@ -273,9 +289,9 @@ class Ground extends Shape {
 }
 
 class Union extends BinaryOperator {
-    smoothing: number;
+    smoothing: Expr<Float>;
 
-    constructor(smoothing: number, scenes: Scene[]) {
+    constructor(smoothing: Expr<Float>, scenes: Scene[]) {
         super(scenes);
         this.smoothing = smoothing;
     }
@@ -283,18 +299,18 @@ class Union extends BinaryOperator {
     protected override compileBinary(lastIdentifier: (property: Property) => string, shape: Shape, identifier: (property: Property) => string, transformer: TransformFunction, property: Property): string {
         switch (property) {
             case "sdf":
-                return `smin(${lastIdentifier(property)}, ${shape.identifier(property)}, ${float(this.smoothing)})`;
+                return `smin(${lastIdentifier(property)}, ${shape.identifier(property)}, ${this.smoothing.compile()})`;
             case "normal":
             case "color":
-                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
 }
 
 class Difference extends BinaryOperator {
-    smoothing: number;
+    smoothing: Expr<Float>;
 
-    constructor(smoothing: number, scenes: Scene[]) {
+    constructor(smoothing: Expr<Float>, scenes: Scene[]) {
         super(scenes);
         this.smoothing = smoothing;
     }
@@ -302,19 +318,19 @@ class Difference extends BinaryOperator {
     protected override compileBinary(lastIdentifier: (property: Property) => string, shape: Shape, identifier: (property: Property) => string, transformer: TransformFunction, property: Property): string {
         switch (property) {
             case "sdf":
-                return `smax(${lastIdentifier(property)}, -${shape.identifier(property)}, ${float(this.smoothing)})`;
+                return `smax(${lastIdentifier(property)}, -${shape.identifier(property)}, ${this.smoothing.compile()})`;
             case "normal":
-                return `blend3(${lastIdentifier(property)}, -${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+                return `blend3(${lastIdentifier(property)}, -${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "color":
-                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
 }
 
 class Cut extends BinaryOperator {
-    smoothing: number;
+    smoothing: Expr<Float>;
 
-    constructor(smoothing: number, scenes: Scene[]) {
+    constructor(smoothing: Expr<Float>, scenes: Scene[]) {
         super(scenes);
         this.smoothing = smoothing;
     }
@@ -322,11 +338,11 @@ class Cut extends BinaryOperator {
     protected override compileBinary(lastIdentifier: (property: Property) => string, shape: Shape, identifier: (property: Property) => string, transformer: TransformFunction, property: Property): string {
         switch (property) {
             case "sdf":
-                return `smax(${lastIdentifier(property)}, ${shape.identifier(property)}, ${float(this.smoothing)})`;
+                return `smax(${lastIdentifier(property)}, ${shape.identifier(property)}, ${this.smoothing.compile()})`;
             case "normal":
-                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "color":
-                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
 }
@@ -396,6 +412,7 @@ function main() {
                         new Union(0.08,
                             [
                                 new Translate(
+                                    // 123 // TODO: this works too since TS does structural type checking...
                                     new Vec3(-.2, 0, 0),
                                     new Difference(0.15,
                                         [
@@ -408,7 +425,7 @@ function main() {
                                                     ),
                                                     new Translate(
                                                         new Vec3(-0.1, 0.3, 0.0),
-                                                        new Sphere(0.1, new Material(new Vec3(1, 0, 0))),
+                                                        new Sphere("sin(iTime) * 0.1 + 0.15", new Material(new Vec3(1, 0, 0))),
                                                     ),
                                                 ]
                                             ),
