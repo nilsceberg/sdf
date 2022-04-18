@@ -1,4 +1,4 @@
-const float STEP_SIZE = 0.01;
+const float STEP_SIZE = 0.001;
 const float MAX_RANGE = 5.0;
 
 // Attribution: https://github.com/glslify/glsl-smooth-min/blob/master/poly.glsl
@@ -11,8 +11,7 @@ float smax(float a, float b, float k) {
 	return -smin(-a, -b, k);
 }
 
-vec3 blend3(vec3 a, vec3 b, float sdfa, float sdfb, float k) {
-	float sdf = smin(sdfa, sdfb, k);
+vec3 blend3(vec3 a, vec3 b, float sdfa, float sdfb, float sdf, float k) {
 	float da = abs(sdfa - sdf);
 	float db = abs(sdfb - sdf);
 	float t = da / (da + db);

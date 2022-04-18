@@ -19,7 +19,22 @@ const PropertyTypes: {[type: string]: string} = {
     "color": "vec3",
 }
 
-class Vec3 {
+interface Expr<T> {
+    compile(): string;
+}
+
+// Extends strings to work as values.
+declare global {
+    interface String extends Expr<String> {
+
+    }
+}
+
+String.prototype.compile = function(): string {
+    return this as string;
+}
+
+class Vec3 implements Expr<Vec3>{
     readonly x: number;
     readonly y: number;
     readonly z: number;
@@ -38,11 +53,11 @@ class Vec3 {
 }
 
 class Material {
-    color: Vec3;
+    color: Expr<Vec3>;
 
     static Default = new Material(new Vec3(1, 1, 1));
 
-    constructor(color: Vec3) {
+    constructor(color: Expr<Vec3>) {
         this.color = color;
     }
 
@@ -193,16 +208,17 @@ abstract class BinaryOperator extends Operator {
         let lastIdentifier = (property: Property) => this.scenes[0].identifier(property);
         for (let i=1; i<this.scenes.length; ++i) {
             let id = this.id - this.scenes.length + i;
-            output.write(`${PropertyTypes[property]} ${property}${id} = ${
-                this.compileBinary(lastIdentifier, this.scenes[i], transformer, property)
+            const identifier = (property: Property) => `${property}${id}`;
+            output.write(`${PropertyTypes[property]} ${identifier(property)} = ${
+                this.compileBinary(lastIdentifier, this.scenes[i], identifier, transformer, property)
             };`);
-            lastIdentifier = property => `${property}${id}`;
+            lastIdentifier = identifier;
         }
 
         this.writeProperty(output, property, lastIdentifier(property));
     }
 
-    protected abstract compileBinary(identifier: (property: Property) => string, scene: Scene, transformer: TransformFunction, property: Property): string;
+    protected abstract compileBinary(lastIdentifier: (property: Property) => string, scene: Scene, identifier: (property: Property) => string,transformer: TransformFunction, property: Property): string;
 }
 
 class Sphere extends Shape {
@@ -214,7 +230,7 @@ class Sphere extends Shape {
     }
 
     protected override sdf(transformer: TransformFunction): string {
-        return `length(point - ${transformer(Vec3.Origin.compile())}) - ${this.radius}`;
+        return `length(point - ${transformer(Vec3.Origin.compile())}) - ${float(this.radius)}`;
     }
 
     protected override normal(transformer: TransformFunction): string {
@@ -239,6 +255,23 @@ class Plane extends Shape {
     }
 }
 
+class Ground extends Shape {
+    #normal: Vec3;
+
+    constructor(material?: Material, normal: Vec3 = new Vec3(0, 1, 0)) {
+        super(material);
+        this.#normal = normal;
+    }
+
+    protected override sdf(transformer: TransformFunction): string {
+        return `dot(${this.#normal.compile()}, point - ${transformer(Vec3.Origin.compile())})`;
+    }
+
+    protected override normal(transformer: TransformFunction): string {
+        return this.#normal.compile();
+    }
+}
+
 class Union extends BinaryOperator {
     smoothing: number;
 
@@ -247,13 +280,53 @@ class Union extends BinaryOperator {
         this.smoothing = smoothing;
     }
 
-    protected override compileBinary(identifier: (property: Property) => string, shape: Shape, transformer: TransformFunction, property: Property): string {
+    protected override compileBinary(lastIdentifier: (property: Property) => string, shape: Shape, identifier: (property: Property) => string, transformer: TransformFunction, property: Property): string {
         switch (property) {
             case "sdf":
-                return `smin(${identifier(property)}, ${shape.identifier(property)}, ${float(this.smoothing)})`;
+                return `smin(${lastIdentifier(property)}, ${shape.identifier(property)}, ${float(this.smoothing)})`;
             case "normal":
             case "color":
-                return `blend3(${identifier(property)}, ${shape.identifier(property)}, ${identifier("sdf")}, ${shape.identifier("sdf")}, ${float(this.smoothing)})`;
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+        }
+    }
+}
+
+class Difference extends BinaryOperator {
+    smoothing: number;
+
+    constructor(smoothing: number, scenes: Scene[]) {
+        super(scenes);
+        this.smoothing = smoothing;
+    }
+
+    protected override compileBinary(lastIdentifier: (property: Property) => string, shape: Shape, identifier: (property: Property) => string, transformer: TransformFunction, property: Property): string {
+        switch (property) {
+            case "sdf":
+                return `smax(${lastIdentifier(property)}, -${shape.identifier(property)}, ${float(this.smoothing)})`;
+            case "normal":
+                return `blend3(${lastIdentifier(property)}, -${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+            case "color":
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+        }
+    }
+}
+
+class Cut extends BinaryOperator {
+    smoothing: number;
+
+    constructor(smoothing: number, scenes: Scene[]) {
+        super(scenes);
+        this.smoothing = smoothing;
+    }
+
+    protected override compileBinary(lastIdentifier: (property: Property) => string, shape: Shape, identifier: (property: Property) => string, transformer: TransformFunction, property: Property): string {
+        switch (property) {
+            case "sdf":
+                return `smax(${lastIdentifier(property)}, ${shape.identifier(property)}, ${float(this.smoothing)})`;
+            case "normal":
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
+            case "color":
+                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${float(this.smoothing)})`;
         }
     }
 }
@@ -312,29 +385,53 @@ class Compiler {
 
 function main() {
     const scene = (
-        new Union(0.1,
-            [
-                new Translate(
-                    new Vec3(0, 0, 1),
-                    new Union(0.2,
-                        [
-                            new Sphere(0.2),
-                            new Translate(
-                                new Vec3(0.4, 0.2, 0.0),
-                                new Sphere(0.5),
-                            ),
-                            new Translate(
-                                new Vec3(-0.1, 0.3, 0.0),
-                                new Sphere(0.1, new Material(new Vec3(1, 0, 0))),
-                            ),
-                        ]
+        new Translate(
+            new Vec3(0, 0.1, 1.5),
+            new Cut(
+                0.01,
+                [
+                    new Sphere(1, new Material(new Vec3(0.2, 0.2, 0.2))),
+                    new Translate(
+                        new Vec3(0, -0.2, 0),
+                        new Union(0.08,
+                            [
+                                new Translate(
+                                    new Vec3(-.2, 0, 0),
+                                    new Difference(0.15,
+                                        [
+                                            new Union(0.2,
+                                                [
+                                                    new Sphere(0.2, new Material(new Vec3(0, 0, 1))),
+                                                    new Translate(
+                                                        new Vec3(0.4, 0.2, 0.0),
+                                                        new Sphere(0.5),
+                                                    ),
+                                                    new Translate(
+                                                        new Vec3(-0.1, 0.3, 0.0),
+                                                        new Sphere(0.1, new Material(new Vec3(1, 0, 0))),
+                                                    ),
+                                                ]
+                                            ),
+                                            new Translate(
+                                                new Vec3(0.4, 0.2, -0.2),
+                                                new Sphere(0.25, new Material(new Vec3(.3, .3, .3))),
+                                            ),
+                                            new Translate(
+                                                new Vec3(0.4, 0.2, 0.2),
+                                                new Sphere(0.25, new Material(new Vec3(.3, .3, .3))),
+                                            ),
+                                        ],
+                                    ),
+                                ),
+                                new Translate(
+                                    new Vec3(0, -0.2, 0),
+                                    new Ground(new Material("vec3(clamp(mod(floor(point.x * 10.0) + floor(point.z * 10.0), 2.0), 0.2, 0.5))")),
+                                ),
+                            ]
+                        )
                     )
-                ),
-                new Translate(
-                    new Vec3(0, -0.2, 0),
-                    new Plane(new Vec3(0, 1, 0)),
-                ),
-            ]
+                ]
+            )
         )
     );
 
