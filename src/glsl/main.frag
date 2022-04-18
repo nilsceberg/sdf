@@ -45,9 +45,9 @@ vec3 blend3(vec3 a, vec3 b, float sdfa, float sdfb, float sdf, float k) {
 	return mix(a, b, t);
 }
 
-const vec3 SUN = normalize(vec3(-1.0, -1.0, 1.0));
-vec3 diffuse(vec3 normal, vec3 color) {
-	return color * (dot(-SUN, normal) + 1.0) / 2.0;
+const vec3 SUN = normalize(vec3(3.0, 3.0, 1.0));
+vec3 diffuse(vec3 position, vec3 normal, vec3 color) {
+	return color * (dot(SUN - position, normal) + 1.0) / 2.0;
 }
 
 vec3 edgeGlowAccumulation(float sdf, float edge, vec3 color) {
@@ -82,7 +82,7 @@ vec3 raymarch(vec3 ray) {
 		if (sdf < STEP_SIZE) {
 			#evaluate <normal>
 			#evaluate <color>
-			finalColor = diffuse(normal, color);
+			finalColor = diffuse(point, normal, color);
 			break;
 			
 			//finalColor = mix(finalColor, color, length(color) * reflectionFactor);
