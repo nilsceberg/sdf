@@ -7,6 +7,19 @@ float smin(float a, float b, float k) {
   return mix(b, a, h) - k * h * (1.0 - h);
 }
 
+vec3 blend3(vec3 a, vec3 b, float sdfa, float sdfb, float k) {
+	float sdf = smin(sdfa, sdfb, k);
+	float da = abs(sdfa - sdf);
+	float db = abs(sdfb - sdf);
+	float t = da / (da + db);
+	return mix(a, b, t);
+}
+
+const vec3 SUN = normalize(vec3(-1.0, -1.0, 1.0));
+vec3 diffuse(vec3 normal, vec3 color) {
+	return color * (dot(-SUN, normal) + 1.0) / 2.0;
+}
+
 vec3 raymarch(vec3 ray) {
 	vec3 point = vec3(0.0);
 	float totalDistance = 0.0;
@@ -15,15 +28,16 @@ vec3 raymarch(vec3 ray) {
 	int jumps = 4;
 	
 	while (totalDistance < MAX_RANGE) {
-		#include <sdf>
+		#evaluate <sdf>
 
 		if (sdf < STEP_SIZE) {
-			//vec3 normal = normalize(modelGradient(pos));
-			//vec3 color = diffuse(normal, modelColor(pos));
-			//finalColor = mix(finalColor, color, length(color) * reflectionFactor);
-			finalColor = vec3(1.0, 1.0, 1.0);
+			#evaluate <normal>
+			#evaluate <color>
+			finalColor = diffuse(normal, color);
 			break;
 			
+			//finalColor = mix(finalColor, color, length(color) * reflectionFactor);
+
 			// reflect:
 			//reflectionFactor = 1.0 - dot(-ray, normal);
 			//if (jumps-- == 0) break;

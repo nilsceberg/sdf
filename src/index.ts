@@ -11,6 +11,28 @@ const float = (x: number) => {
     else return str + ".0";
 }
 
+type Property = "sdf" | "normal" | "color";
+
+const PropertyTypes: {[type: string]: string} = {
+    "sdf": "float",
+    "normal": "vec3",
+    "color": "vec3",
+}
+
+class InvalidPropertyException {
+    readonly property: Property;
+    readonly object: Function;
+
+    constructor(object: Function, property: Property) {
+        this.property = property;
+        this.object = object;
+    }
+
+    toString(): string {
+        return `property ${this.property} not supported by ${this.object.name}`;
+    }
+}
+
 interface Output {
     pushIndent(n: number): void;
     popIndent(n: number): void;
@@ -34,38 +56,39 @@ class ConsoleOutput implements Output {
 }
 
 abstract class Scene {
-    private static nextId: number = 0;
-    private id: number;
+    protected static nextId: number = 0;
+    protected id: number;
 
-    constructor() {
-        this.id = Scene.nextId++;
+    constructor(reserveIds: number = 1) {
+        Scene.nextId += reserveIds;
+        this.id = Scene.nextId - 1;
     }
 
-    identifier(): string {
-        return `sdf${this.id}`;
+    identifier(property: Property): string {
+        return `${property}${this.id}`;
     }
 
-    protected writeSdf(output: Output, expr: string) {
-        output.write(`float ${this.identifier()} = ${expr};`)
+    protected writeProperty(output: Output, property: Property, expr: string) {
+        output.write(`${PropertyTypes[property]} ${this.identifier(property)} = ${expr};`)
     }
 
-    abstract compile(transformer: TransformFunction, output: Output): void;
+    abstract compile(transformer: TransformFunction, output: Output, property: Property): void;
 }
 
 abstract class Transform extends Scene {
     scene: Scene;
 
     constructor(scene: Scene) {
-        super();
+        super(0);
         this.scene = scene;
     }
 
-    override identifier(): string {
-        return this.scene.identifier();
+    override identifier(property: Property): string {
+        return this.scene.identifier(property);
     }
 
-    override compile(transformer: TransformFunction, output: Output): void {
-        this.scene.compile(compose(this.transformer(), transformer), output);
+    override compile(transformer: TransformFunction, output: Output, property: Property): void {
+        this.scene.compile(compose(this.transformer(), transformer), output, property);
     }
 
     abstract transformer(): TransformFunction;
@@ -103,33 +126,44 @@ class Vec3 {
 }
 
 abstract class Shape extends Scene {
-    abstract override compile(transformer: TransformFunction, output: Output): void;
+    abstract override compile(transformer: TransformFunction, output: Output, property: Property): void;
 }
 
 abstract class Operator extends Scene {
     readonly scenes: Scene[];
 
-    constructor(scenes: Scene[]) {
-        super();
+    constructor(scenes: Scene[], reserveIds: number = 1) {
+        super(reserveIds);
         this.scenes = scenes;
     }
 
-    abstract override compile(transformer: TransformFunction, output: Output): void;
+    abstract override compile(transformer: TransformFunction, output: Output, property: Property): void;
 }
 
 abstract class BinaryOperator extends Operator {
-    override compile(transformer: TransformFunction, output: Output): void {
-        for (let scene of this.scenes) {
-            scene.compile(transformer, output);
-        }
-
-        this.writeSdf(output, `${this.scenes.slice(1).reduce(
-            (expr, scene) => this.compileBinary(expr, scene, transformer),
-            this.scenes[0].identifier()
-        )}`);
+    constructor(scenes: Scene[]) {
+        // Reserve additional identifiers for intermediate values.
+        super(scenes, scenes.length);
     }
 
-    protected abstract compileBinary(expr: string, scene: Scene, transformer: TransformFunction): string;
+    override compile(transformer: TransformFunction, output: Output, property: Property): void {
+        for (let scene of this.scenes) {
+            scene.compile(transformer, output, property);
+        }
+
+        let lastIdentifier = (property: Property) => this.scenes[0].identifier(property);
+        for (let i=1; i<this.scenes.length; ++i) {
+            let id = this.id - this.scenes.length + i;
+            output.write(`${PropertyTypes[property]} ${property}${id} = ${
+                this.compileBinary(lastIdentifier, this.scenes[i], transformer, property)
+            };`);
+            lastIdentifier = property => `${property}${id}`;
+        }
+
+        this.writeProperty(output, property, lastIdentifier(property));
+    }
+
+    protected abstract compileBinary(identifier: (property: Property) => string, scene: Scene, transformer: TransformFunction, property: Property): string;
 }
 
 class Sphere extends Shape {
@@ -140,8 +174,19 @@ class Sphere extends Shape {
         this.radius = radius;
     }
 
-    override compile(transformer: TransformFunction, output: Output): void {
-        this.writeSdf(output, `length(point - ${transformer(Vec3.Origin.compile())}) - ${this.radius}`);
+    override compile(transformer: TransformFunction, output: Output, property: Property): void {
+        if (property === "sdf") {
+            this.writeProperty(output, "sdf", `length(point - ${transformer(Vec3.Origin.compile())}) - ${this.radius}`);
+        }
+        else if (property === "normal") {
+            this.writeProperty(output, "normal", `normalize(point - ${transformer(Vec3.Origin.compile())})`);
+        }
+        else if (property === "color") {
+            this.writeProperty(output, "color", `vec3(1.0)`);
+        }
+        else {
+            throw new InvalidPropertyException(Sphere, property);
+        }
     }
 }
 
@@ -153,8 +198,14 @@ class Union extends BinaryOperator {
         this.smoothing = smoothing;
     }
 
-    protected override compileBinary(expr: string, shape: Shape, transformer: TransformFunction): string {
-        return `smin(${expr}, ${shape.identifier()}, ${this.smoothing})`;
+    protected override compileBinary(identifier: (property: Property) => string, shape: Shape, transformer: TransformFunction, property: Property): string {
+        switch (property) {
+            case "sdf":
+                return `smin(${identifier(property)}, ${shape.identifier(property)}, ${this.smoothing})`;
+            case "normal":
+            case "color":
+                return `blend3(${identifier(property)}, ${shape.identifier(property)}, ${identifier("sdf")}, ${shape.identifier("sdf")}, ${this.smoothing})`;
+        }
     }
 }
 
@@ -164,7 +215,7 @@ class Compiler {
     }
 
     private checkTemplateString(line: string): [string | null, number] {
-        const match = line.match(/^(\t*)#include\s+<(\w+)>\s*$/);
+        const match = line.match(/^(\t*)#evaluate\s+<(\w+)>\s*$/);
         if (match) {
             return [match[2], match[1].length];
         }
@@ -174,14 +225,18 @@ class Compiler {
     }
 
     private replace(output: Output, templateString: string, scene: Scene) {
-        switch (templateString) {
-            case "sdf":
-                scene.compile(identity, output);
-                output.write(`float sdf = ${scene.identifier()};`);
-                return;
-            default:
-                output.write("/* unknown template string */");
-                return;
+        try {
+            if (templateString in PropertyTypes) {
+                const property = templateString as Property;
+                scene.compile(identity, output, property);
+                output.write(`${PropertyTypes[property]} ${property} = ${scene.identifier(property)};`)
+            }
+            else {
+                output.write(`/* unknown property: ${templateString} */`);
+            }
+        }
+        catch (e) {
+            output.write(`/* error: ${e.toString()} */`);
         }
     }
 
@@ -209,13 +264,17 @@ class Compiler {
 function main() {
     const scene = (
         new Translate(
-            new Vec3(0, 0, 2),
+            new Vec3(0, 0, 1),
             new Union(0.2,
                 [
                     new Sphere(0.2),
                     new Translate(
                         new Vec3(0.4, 0.2, 0.0),
                         new Sphere(0.5),
+                    ),
+                    new Translate(
+                        new Vec3(-0.1, 0.3, 0.0),
+                        new Sphere(0.1),
                     ),
                 ]
             )
