@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+        "noImplicitAny": true,
+        "target": "ES2015",
+        "lib": ["ES2015"],
+        "module": "CommonJS",
+        "strictNullChecks": true,
+        "outDir": "dist"
+    },
+    "include": ["src"]
+}
