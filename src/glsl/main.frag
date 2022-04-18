@@ -3,8 +3,12 @@ const float MAX_RANGE = 5.0;
 
 // Attribution: https://github.com/glslify/glsl-smooth-min/blob/master/poly.glsl
 float smin(float a, float b, float k) {
-  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-  return mix(b, a, h) - k * h * (1.0 - h);
+	float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+	return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float smax(float a, float b, float k) {
+	return -smin(-a, -b, k);
 }
 
 vec3 blend3(vec3 a, vec3 b, float sdfa, float sdfb, float k) {
