@@ -5,12 +5,13 @@ const identity = <T>(x: T) => x;
 
 const compose = (f: TransformFunction, g: TransformFunction) => (expr: string) => g(f(expr));
 
-type Property = "sdf" | "normal" | "color";
+type Property = "sdf" | "normal" | "color" | "edge";
 
 const PropertyTypes: {[type: string]: string} = {
     "sdf": "float",
     "normal": "vec3",
     "color": "vec3",
+    "edge": "float",
 }
 
 interface Expr<T> {
@@ -70,16 +71,19 @@ Number.prototype.compile = function(): string {
 
 class Material {
     color: Expr<Vec3>;
+    edgeGlow: Expr<Float> = 0.0;
 
     static Default = new Material(new Vec3(1, 1, 1));
 
-    constructor(color: Expr<Vec3>) {
+    constructor(color: Expr<Vec3>, edgeGlow: Expr<Float> = 0.0) {
         this.color = color;
+        this.edgeGlow = edgeGlow;
     }
 
     compile(transformer: TransformFunction, property: Property): string {
         switch (property) {
             case "color": return this.color.compile();
+            case "edge": return this.edgeGlow.compile();
             default: throw new InvalidPropertyException(Material, property);
         }
     }
@@ -303,6 +307,8 @@ class Union extends BinaryOperator {
             case "normal":
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
+            case "edge":
+                return `blend(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
 }
@@ -323,6 +329,8 @@ class Difference extends BinaryOperator {
                 return `blend3(${lastIdentifier(property)}, -${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
+            case "edge":
+                return `blend(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
 }
@@ -343,6 +351,8 @@ class Cut extends BinaryOperator {
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
+            case "edge":
+                return `blend(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
 }
@@ -425,7 +435,7 @@ function main() {
                                                     ),
                                                     new Translate(
                                                         new Vec3(-0.1, 0.3, 0.0),
-                                                        new Sphere("sin(iTime) * 0.1 + 0.15", new Material(new Vec3(1, 0, 0))),
+                                                        new Sphere("sin(iTime) * 0.1 + 0.15", new Material(new Vec3(1, 0, 0), 1.0)),
                                                     ),
                                                 ]
                                             ),
