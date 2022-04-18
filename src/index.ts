@@ -19,6 +19,41 @@ const PropertyTypes: {[type: string]: string} = {
     "color": "vec3",
 }
 
+class Vec3 {
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+
+    static Origin = new Vec3(0, 0, 0);
+
+    constructor(x: number, y: number, z: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+
+    compile(): string {
+        return `vec3(${float(this.x)}, ${float(this.y)}, ${float(this.z)})`;
+    }
+}
+
+class Material {
+    color: Vec3;
+
+    static Default = new Material(new Vec3(1, 1, 1));
+
+    constructor(color: Vec3) {
+        this.color = color;
+    }
+
+    compile(transformer: TransformFunction, property: Property): string {
+        switch (property) {
+            case "color": return this.color.compile();
+            default: throw new InvalidPropertyException(Material, property);
+        }
+    }
+}
+
 class InvalidPropertyException {
     readonly property: Property;
     readonly object: Function;
@@ -107,25 +142,16 @@ class Translate extends Transform {
     }
 }
 
-class Vec3 {
-    readonly x: number;
-    readonly y: number;
-    readonly z: number;
-
-    static Origin = new Vec3(0, 0, 0);
-
-    constructor(x: number, y: number, z: number) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-    }
-
-    compile(): string {
-        return `vec3(${float(this.x)}, ${float(this.y)}, ${float(this.z)})`;
-    }
-}
-
 abstract class Shape extends Scene {
+    material: Material = Material.Default;
+
+    constructor(material?: Material) {
+        super();
+        if (material) {
+            this.material = material;
+        }
+    }
+
     abstract override compile(transformer: TransformFunction, output: Output, property: Property): void;
 }
 
@@ -169,8 +195,8 @@ abstract class BinaryOperator extends Operator {
 class Sphere extends Shape {
     radius: number;
 
-    constructor(radius: number) {
-        super();
+    constructor(radius: number, material?: Material) {
+        super(material);
         this.radius = radius;
     }
 
@@ -181,11 +207,8 @@ class Sphere extends Shape {
         else if (property === "normal") {
             this.writeProperty(output, "normal", `normalize(point - ${transformer(Vec3.Origin.compile())})`);
         }
-        else if (property === "color") {
-            this.writeProperty(output, "color", `vec3(1.0)`);
-        }
         else {
-            throw new InvalidPropertyException(Sphere, property);
+            this.writeProperty(output, property, this.material.compile(transformer, property));
         }
     }
 }
@@ -193,8 +216,8 @@ class Sphere extends Shape {
 class Union extends BinaryOperator {
     smoothing: number;
 
-    constructor(smoothing: number, shapes: Shape[]) {
-        super(shapes);
+    constructor(smoothing: number, scenes: Scene[]) {
+        super(scenes);
         this.smoothing = smoothing;
     }
 
@@ -274,7 +297,7 @@ function main() {
                     ),
                     new Translate(
                         new Vec3(-0.1, 0.3, 0.0),
-                        new Sphere(0.1),
+                        new Sphere(0.1, new Material(new Vec3(1, 0, 0))),
                     ),
                 ]
             )
