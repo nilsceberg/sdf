@@ -422,6 +422,10 @@ function main() {
                         new Union(0.08,
                             [
                                 new Translate(
+                                    new Vec3(0, 0.2, -0.7),
+                                    new Sphere(0.1),
+                                ),
+                                new Translate(
                                     // 123 // TODO: this works too since TS does structural type checking...
                                     new Vec3(-.2, 0, 0),
                                     new Difference(0.15,

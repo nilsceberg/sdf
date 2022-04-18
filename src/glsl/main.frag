@@ -1,5 +1,5 @@
 const float STEP_SIZE = 0.001;
-const float MAX_RANGE = 5.0;
+const float MAX_RANGE = 10.0;
 const float EPSILON = 0.00001;
 
 // All components are in the range [0…1], including hue.
@@ -66,7 +66,7 @@ vec3 valueMix(vec3 a, vec3 b) {
 }
 
 // (x,y,z,sdf)
-vec3 raymarch(vec3 from, vec3 to) {
+vec3 raymarch(vec3 from, vec3 to, float sdfBias) {
 	vec3 point = from;
 	vec3 ray = normalize(to - from);
 	float totalDistance = 0.0;
@@ -76,6 +76,7 @@ vec3 raymarch(vec3 from, vec3 to) {
 	while (totalDistance < MAX_RANGE) {
 		float remaining = length(to - point);
 		#evaluate <sdf>
+		sdf += sdfBias;
 
 		if (remaining < sdf) {
 			point = to;
@@ -95,7 +96,7 @@ vec3 raymarch(vec3 from, vec3 to) {
 
 vec3 raytrace(vec3 ray) {
 	vec3 stop = ray * MAX_RANGE;
-	vec3 point = raymarch(vec3(0.0), stop);
+	vec3 point = raymarch(vec3(0.0), stop, 0.0);
 
 	vec3 finalColor = vec3(0.0);
 	
@@ -103,11 +104,27 @@ vec3 raytrace(vec3 ray) {
 		// Hit nothing.
 	}
 	else {
-		// Hit something!
 		// Yes, evaluating the SDF again is sometimes redundant, but makes for nicer code.
 		#evaluate <sdf>
 		#evaluate <normal>
 		#evaluate <color>
+
+		// Normal visualization:
+		//return (normal + vec3(1.0)) * 0.5;
+
+		//vec3 pointAboveSurface = point + normal * (STEP_SIZE * 2.0);
+		vec3 pointAboveSurface = point;
+
+		// Cast ray toward light source to see if we are reached by it.
+		// Add a small margin to the SDF so that we are outside the shape
+		// we're tracing from.
+		if (length(SUN - raymarch(pointAboveSurface, SUN, (STEP_SIZE - sdf) + EPSILON)) < EPSILON) {
+			// Hit something!
+		} 
+		else {
+			// Otherwise, we are in shadow.
+			color *= 0.4; // ambient
+		}
 
 		finalColor = diffuse(point, normal, color);
 	}
