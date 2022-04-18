@@ -152,7 +152,20 @@ abstract class Shape extends Scene {
         }
     }
 
-    abstract override compile(transformer: TransformFunction, output: Output, property: Property): void;
+    override compile(transformer: TransformFunction, output: Output, property: Property): void {
+        if (property === "sdf") {
+            this.writeProperty(output, "sdf", this.sdf(transformer));
+        }
+        else if (property === "normal") {
+            this.writeProperty(output, "normal", this.normal(transformer));
+        }
+        else {
+            this.writeProperty(output, property, this.material.compile(transformer, property));
+        }
+    }
+
+    protected abstract sdf(transformer: TransformFunction): string;
+    protected abstract normal(transformer: TransformFunction): string;
 }
 
 abstract class Operator extends Scene {
@@ -200,16 +213,29 @@ class Sphere extends Shape {
         this.radius = radius;
     }
 
-    override compile(transformer: TransformFunction, output: Output, property: Property): void {
-        if (property === "sdf") {
-            this.writeProperty(output, "sdf", `length(point - ${transformer(Vec3.Origin.compile())}) - ${this.radius}`);
-        }
-        else if (property === "normal") {
-            this.writeProperty(output, "normal", `normalize(point - ${transformer(Vec3.Origin.compile())})`);
-        }
-        else {
-            this.writeProperty(output, property, this.material.compile(transformer, property));
-        }
+    protected override sdf(transformer: TransformFunction): string {
+        return `length(point - ${transformer(Vec3.Origin.compile())}) - ${this.radius}`;
+    }
+
+    protected override normal(transformer: TransformFunction): string {
+        return `normalize(point - ${transformer(Vec3.Origin.compile())})`;
+    }
+}
+
+class Plane extends Shape {
+    #normal: Vec3;
+
+    constructor(normal: Vec3, material?: Material) {
+        super(material);
+        this.#normal = normal;
+    }
+
+    protected override sdf(transformer: TransformFunction): string {
+        return `abs(dot(${this.#normal.compile()}, point - ${transformer(Vec3.Origin.compile())}))`;
+    }
+
+    protected override normal(transformer: TransformFunction): string {
+        return this.#normal.compile();
     }
 }
 
@@ -224,10 +250,10 @@ class Union extends BinaryOperator {
     protected override compileBinary(identifier: (property: Property) => string, shape: Shape, transformer: TransformFunction, property: Property): string {
         switch (property) {
             case "sdf":
-                return `smin(${identifier(property)}, ${shape.identifier(property)}, ${this.smoothing})`;
+                return `smin(${identifier(property)}, ${shape.identifier(property)}, ${float(this.smoothing)})`;
             case "normal":
             case "color":
-                return `blend3(${identifier(property)}, ${shape.identifier(property)}, ${identifier("sdf")}, ${shape.identifier("sdf")}, ${this.smoothing})`;
+                return `blend3(${identifier(property)}, ${shape.identifier(property)}, ${identifier("sdf")}, ${shape.identifier("sdf")}, ${float(this.smoothing)})`;
         }
     }
 }
@@ -286,21 +312,29 @@ class Compiler {
 
 function main() {
     const scene = (
-        new Translate(
-            new Vec3(0, 0, 1),
-            new Union(0.2,
-                [
-                    new Sphere(0.2),
-                    new Translate(
-                        new Vec3(0.4, 0.2, 0.0),
-                        new Sphere(0.5),
-                    ),
-                    new Translate(
-                        new Vec3(-0.1, 0.3, 0.0),
-                        new Sphere(0.1, new Material(new Vec3(1, 0, 0))),
-                    ),
-                ]
-            )
+        new Union(0.1,
+            [
+                new Translate(
+                    new Vec3(0, 0, 1),
+                    new Union(0.2,
+                        [
+                            new Sphere(0.2),
+                            new Translate(
+                                new Vec3(0.4, 0.2, 0.0),
+                                new Sphere(0.5),
+                            ),
+                            new Translate(
+                                new Vec3(-0.1, 0.3, 0.0),
+                                new Sphere(0.1, new Material(new Vec3(1, 0, 0))),
+                            ),
+                        ]
+                    )
+                ),
+                new Translate(
+                    new Vec3(0, -0.2, 0),
+                    new Plane(new Vec3(0, 1, 0)),
+                ),
+            ]
         )
     );
 
