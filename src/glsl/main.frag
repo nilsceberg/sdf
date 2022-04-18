@@ -65,52 +65,57 @@ vec3 valueMix(vec3 a, vec3 b) {
 	return mix(a, b, y / (x+y));
 }
 
-vec3 raymarch(vec3 ray) {
-	vec3 point = vec3(0.0);
+// (x,y,z,sdf)
+vec3 raymarch(vec3 from, vec3 to) {
+	vec3 point = from;
+	vec3 ray = normalize(to - from);
 	float totalDistance = 0.0;
 	vec3 finalColor = vec3(0.0);
-	float reflectionFactor = 1.0;
 	vec3 edgeGlow = vec3(0.0);
-	int jumps = 4;
 	
 	while (totalDistance < MAX_RANGE) {
+		float remaining = length(to - point);
 		#evaluate <sdf>
 
-		//#evaluate <edge>
-		//edgeGlow += edgeGlowAccumulation(sdf, edge, color);
-
-		if (sdf < STEP_SIZE) {
-			#evaluate <normal>
-			#evaluate <color>
-			finalColor = diffuse(point, normal, color);
+		if (remaining < sdf) {
+			point = to;
 			break;
-			
-			//finalColor = mix(finalColor, color, length(color) * reflectionFactor);
-
-			// reflect:
-			//reflectionFactor = 1.0 - dot(-ray, normal);
-			//if (jumps-- == 0) break;
-			//vec3 reflectionPlaneNormal = normalize(cross(normal, cross(normal, ray)));
-			//float projection = dot(ray, reflectionPlaneNormal);
-			//ray = -(ray - 2.0 * projection * reflectionPlaneNormal);
-			
-			//while (totalDistance < MAX_RANGE) {
-			//	#include <sdf>
-			//	if (sdf >= STEP_SIZE) break;
-			//	pos += ray * STEP_SIZE;
-			//	totalDistance += STEP_SIZE;
-			//}
+		}
+		else if (sdf <= remaining && sdf < STEP_SIZE) {
+			break;
 		}
 		
 		// Optimization: Use SDF as step size.
 		point += ray * sdf;
 		totalDistance += sdf;
 	}
+
+	return point;
+}
+
+vec3 raytrace(vec3 ray) {
+	vec3 stop = ray * MAX_RANGE;
+	vec3 point = raymarch(vec3(0.0), stop);
+
+	vec3 finalColor = vec3(0.0);
 	
-	return valueMix(finalColor, clamp(edgeGlow, 0.0, 1.0));
+	if (length(stop - point) < EPSILON) {
+		// Hit nothing.
+	}
+	else {
+		// Hit something!
+		// Yes, evaluating the SDF again is sometimes redundant, but makes for nicer code.
+		#evaluate <sdf>
+		#evaluate <normal>
+		#evaluate <color>
+
+		finalColor = diffuse(point, normal, color);
+	}
+
+	return finalColor;
 }
 
 vec4 render(vec2 screenSpace) {
-	vec3 color = raymarch(normalize(vec3(screenSpace, 1.0)));
+	vec3 color = raytrace(normalize(vec3(screenSpace, 1.0)));
 	return vec4(color, 1.0);
 }
