@@ -2,25 +2,28 @@ const float STEP_SIZE = 0.001;
 const float MAX_RANGE = 10.0;
 const float EPSILON = 0.00001;
 
+const float LIGHT_RAYS = 10.0;
+const float AMBIENT = 0.3;
+
 #define PI 3.1415926538
 
 // All components are in the range [0…1], including hue.
 vec3 hsv2rgb(vec3 c)
 {
-    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+	vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+	vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+	return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
 vec3 rgb2hsv(vec3 c)
 {
-    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+	vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+	vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+	vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
 
-    float d = q.x - min(q.w, q.y);
-    float e = 1.0e-10;
-    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+	float d = q.x - min(q.w, q.y);
+	float e = 1.0e-10;
+	return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
 }
 
 // Attribution: https://github.com/glslify/glsl-smooth-min/blob/master/poly.glsl
@@ -67,18 +70,19 @@ vec3 valueMix(vec3 a, vec3 b) {
 	return mix(a, b, y / (x+y));
 }
 
-// (x,y,z,sdf)
-vec3 raymarch(vec3 from, vec3 to, float sdfBias) {
+// (x,y,z,min(sdf))
+vec4 raymarch(vec3 from, vec3 to, float sdfBias) {
 	vec3 point = from;
 	vec3 ray = normalize(to - from);
 	float totalDistance = 0.0;
 	vec3 finalColor = vec3(0.0);
-	vec3 edgeGlow = vec3(0.0);
+	float minSdf = 100000.0;
 	
 	while (totalDistance < MAX_RANGE) {
 		float remaining = length(to - point);
 		#evaluate <sdf>
 		sdf += sdfBias;
+		minSdf = min(minSdf, sdf);
 
 		if (remaining < sdf) {
 			point = to;
@@ -93,12 +97,14 @@ vec3 raymarch(vec3 from, vec3 to, float sdfBias) {
 		totalDistance += sdf;
 	}
 
-	return point;
+	return vec4(point, minSdf);
 }
 
 vec3 raytrace(vec3 ray) {
 	vec3 stop = ray * MAX_RANGE;
-	vec3 point = raymarch(vec3(0.0), stop, 0.0);
+	vec4 result = raymarch(vec3(0.0), stop, 0.0);
+	vec3 point = result.xyz;
+	float closest = result.w;
 
 	vec3 finalColor = vec3(0.0);
 	
@@ -130,23 +136,18 @@ vec3 raytrace(vec3 ray) {
 		vec3 lightX = normalize(cross(lightDir, vec3(0.0, 1.0, 0.0)));
 		vec3 lightY = normalize(cross(lightX, lightDir));
 
-		// TODO: distribution
 		// TODO: use the glow effect for soft shadows/ambient occlusion, maybe?
-		for (float i = 0.0; i<4.0; i += 1.0) {
-			float r = lightSize / 4.0 * i;
-			for (float j = 0.0; j<(i+1.0); j += 1.0) {
-				float a = 2.0*PI/(i+1.0) * j;
-				vec3 light = light + r * (cos(a) * lightX + sin(a) * lightY);
-				if (length(light - raymarch(pointAboveSurface, light, (STEP_SIZE - sdf) + EPSILON)) < EPSILON) {
-					illumination += 1.0;
-				} 
-				maxIllumination += 1.0;
-			}
+		// Cast rays to edges of light for softer shadows.
+		// Requires many rays for pretty results. :(
+		for (float i = 0.0; i<LIGHT_RAYS; i += 1.0) {
+			float a = 2.0*PI/(LIGHT_RAYS) * i;
+			vec3 light = light + lightSize * (cos(a) * lightX + sin(a) * lightY);
+			if (length(light - raymarch(pointAboveSurface, light, (STEP_SIZE - sdf) + EPSILON).xyz) < EPSILON) {
+				illumination += 1.0 / LIGHT_RAYS;
+			} 
 		}
 
-		illumination = illumination / maxIllumination * 0.7 + 0.3;
-
-		color *= illumination; // ambient
+		color *= illumination * (1.0 - AMBIENT) + AMBIENT;
 		finalColor = diffuse(point, normal, color);
 	}
 

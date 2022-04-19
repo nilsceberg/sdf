@@ -422,7 +422,7 @@ function main() {
                         new Union(0.08,
                             [
                                 new Translate(
-                                    new Vec3(0, 0.2, -0.7),
+                                    new Vec3(0, 0.0, -0.7),
                                     new Sphere(0.1),
                                 ),
                                 new Translate(
