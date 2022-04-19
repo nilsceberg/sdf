@@ -1,8 +1,15 @@
-const float STEP_SIZE = 0.001;
-const float MAX_RANGE = 10.0;
+// Misc
 const float EPSILON = 0.00001;
 
-const float LIGHT_RAYS = 10.0;
+// Raymarching
+const float STEP_SIZE = 0.001;
+const float MAX_RANGE = 10.0;
+
+// Raytracing
+const float LIGHT_RAYS = 0.0;
+const int JUMPS = 1;
+
+// Lighting
 const float AMBIENT = 0.3;
 
 #define PI 3.1415926538
@@ -71,14 +78,13 @@ vec3 valueMix(vec3 a, vec3 b) {
 }
 
 // (x,y,z,min(sdf))
-vec4 raymarch(vec3 from, vec3 to, float sdfBias) {
+vec4 raymarch(vec3 from, vec3 to, float sdfBias, inout float range) {
 	vec3 point = from;
 	vec3 ray = normalize(to - from);
-	float totalDistance = 0.0;
 	vec3 finalColor = vec3(0.0);
 	float minSdf = 100000.0;
 	
-	while (totalDistance < MAX_RANGE) {
+	while (range > STEP_SIZE) {
 		float remaining = length(to - point);
 		#evaluate <sdf>
 		sdf += sdfBias;
@@ -86,6 +92,7 @@ vec4 raymarch(vec3 from, vec3 to, float sdfBias) {
 
 		if (remaining < sdf) {
 			point = to;
+			range = 0.0;
 			break;
 		}
 		else if (sdf <= remaining && sdf < STEP_SIZE) {
@@ -94,67 +101,99 @@ vec4 raymarch(vec3 from, vec3 to, float sdfBias) {
 		
 		// Optimization: Use SDF as step size.
 		point += ray * sdf;
-		totalDistance += sdf;
+		range -= sdf;
 	}
 
 	return vec4(point, minSdf);
 }
 
+vec3 reflectionRay(vec3 ray, vec3 normal) {
+	// Reflection angle
+	vec3 reflectionPlaneNormal = normalize(cross(normal, cross(normal, ray)));
+	float projection = dot(ray, reflectionPlaneNormal);
+	return -(ray - 2.0 * projection * reflectionPlaneNormal);
+}
+
 vec3 raytrace(vec3 ray) {
-	vec3 stop = ray * MAX_RANGE;
-	vec4 result = raymarch(vec3(0.0), stop, 0.0);
-	vec3 point = result.xyz;
-	float closest = result.w;
-
+	int iterations = JUMPS + 1;
+	float range = MAX_RANGE;
+	float bias = 0.0;
+	float reflectivity = 1.0;
 	vec3 finalColor = vec3(0.0);
-	
-	if (length(stop - point) < EPSILON) {
-		// Hit nothing.
-	}
-	else {
-		// Yes, evaluating the SDF again is sometimes redundant, but makes for nicer code.
-		#evaluate <sdf>
-		#evaluate <normal>
-		#evaluate <color>
+	vec3 point = vec3(0.0);
 
-		// Normal visualization:
-		//return (normal + vec3(1.0)) * 0.5;
-
-		//vec3 pointAboveSurface = point + normal * (STEP_SIZE * 2.0);
-		vec3 pointAboveSurface = point;
-
-		// Cast ray toward light source to see if we are reached by it.
-		// Add a small margin to the SDF so that we are outside the shape
-		// we're tracing from.
-		float illumination = 0.0; // ambient
-		float maxIllumination = 0.0;
-
-		vec3 light = SUN;
-		vec3 lightDir = light - point;
-		float lightSize = 0.05;
-
-		vec3 lightX = normalize(cross(lightDir, vec3(0.0, 1.0, 0.0)));
-		vec3 lightY = normalize(cross(lightX, lightDir));
-
-		// TODO: use the glow effect for soft shadows/ambient occlusion, maybe?
-		// Cast rays to edges of light for softer shadows.
-		// Requires many rays for pretty results. :(
-		for (float i = 0.0; i<LIGHT_RAYS; i += 1.0) {
-			float a = 2.0*PI/(LIGHT_RAYS) * i;
-			vec3 light = light + lightSize * (cos(a) * lightX + sin(a) * lightY);
-			if (length(light - raymarch(pointAboveSurface, light, (STEP_SIZE - sdf) + EPSILON).xyz) < EPSILON) {
-				illumination += 1.0 / LIGHT_RAYS;
-			} 
+	while (iterations-- > 0 && range > STEP_SIZE && reflectivity > 0.0) {
+		vec3 stop = ray * range;
+		vec4 result = raymarch(point, stop, bias, range);
+		point = result.xyz;
+		float closest = result.w;
+		
+		if (range <= STEP_SIZE) {
+			// Hit nothing.
+			break;
 		}
+		else {
+			// Yes, evaluating the SDF again is sometimes redundant, but makes for nicer code.
+			#evaluate <sdf>
+			#evaluate <normal>
+			#evaluate <color>
 
-		color *= illumination * (1.0 - AMBIENT) + AMBIENT;
-		finalColor = diffuse(point, normal, color);
+			// Normal visualization:
+			//return (normal + vec3(1.0)) * 0.5;
+
+			//vec3 pointAboveSurface = point + normal * (STEP_SIZE * 2.0);
+			vec3 pointAboveSurface = point;
+
+			// Cast ray toward light source to see if we are reached by it.
+			// Add a small margin to the SDF so that we are outside the shape
+			// we're tracing from.
+			float illumination = 0.0; // ambient
+			float maxIllumination = 0.0;
+
+			vec3 light = SUN;
+			vec3 lightDir = light - point;
+			float lightSize = 0.05;
+
+			vec3 lightX = normalize(cross(lightDir, vec3(0.0, 1.0, 0.0)));
+			vec3 lightY = normalize(cross(lightX, lightDir));
+
+			// For subsequent rays, apply a small bias to make sure the start of the ray is outside the shape:
+			bias += (STEP_SIZE - sdf) + EPSILON;
+
+			// TODO: use the glow effect for soft shadows/ambient occlusion, maybe?
+			// Cast rays to edges of light for softer shadows.
+			// Requires many rays for pretty results. :(
+			if (LIGHT_RAYS > 0.0) {
+				for (float i = 0.0; i<LIGHT_RAYS; i += 1.0) {
+					float a = 2.0*PI/(LIGHT_RAYS) * i;
+					vec3 light = light + lightSize * (cos(a) * lightX + sin(a) * lightY);
+					// Special range just for sun
+					float range = 10.0;
+					if (length(light - raymarch(pointAboveSurface, light, bias, range).xyz) < EPSILON) {
+						illumination += 1.0 / LIGHT_RAYS;
+					} 
+				}
+			}
+			else {
+				illumination = 1.0;
+			}
+
+			color *= illumination * (1.0 - AMBIENT) + AMBIENT;
+			finalColor = valueMix(finalColor, diffuse(point, normal, color) * reflectivity);
+
+			// Reflect!
+			reflectivity *= 0.8; // TODO: fresnel
+			ray = reflectionRay(ray, normal);
+			//return (ray + vec3(1.0)) / 2.0;
+		}
 	}
 
 	return finalColor;
 }
 
+
 vec4 render(vec2 screenSpace) {
+	float range = MAX_RANGE;
 	vec3 color = raytrace(normalize(vec3(screenSpace, 1.0)));
 	return vec4(color, 1.0);
 }
