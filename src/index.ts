@@ -305,6 +305,7 @@ class Union extends BinaryOperator {
             case "sdf":
                 return `smin(${lastIdentifier(property)}, ${shape.identifier(property)}, ${this.smoothing.compile()})`;
             case "normal":
+                return `normalize(blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()}))`;
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "edge":
@@ -326,7 +327,7 @@ class Difference extends BinaryOperator {
             case "sdf":
                 return `smax(${lastIdentifier(property)}, -${shape.identifier(property)}, ${this.smoothing.compile()})`;
             case "normal":
-                return `blend3(${lastIdentifier(property)}, -${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
+                return `normalize(blend3(${lastIdentifier(property)}, -${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()}))`;
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "edge":
@@ -348,7 +349,7 @@ class Cut extends BinaryOperator {
             case "sdf":
                 return `smax(${lastIdentifier(property)}, ${shape.identifier(property)}, ${this.smoothing.compile()})`;
             case "normal":
-                return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
+                return `normalize(blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()}))`;
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "edge":
