@@ -451,10 +451,6 @@ function main() {
                                                         new Vec3(0.4, 0.2, 0.0),
                                                         new Sphere(0.5, new Material({ reflectivity: 0.0 })),
                                                     ),
-                                                    new Translate(
-                                                        new Vec3(-0.1, 0.3, 0.0),
-                                                        new Sphere("sin(iTime * 5.0) * 0.1 + 0.15", new Material({ color: new Vec3(1, 0, 0), edge: 1.0 })),
-                                                    ),
                                                 ]
                                             ),
                                             new Translate(
@@ -468,10 +464,19 @@ function main() {
                                         ],
                                     ),
                                 ),
-                                new Translate(
-                                    new Vec3(0, -0.2, 0),
-                                    new Ground(new Material({ color: "vec3(clamp(mod(floor(point.x * 10.0) + floor(point.z * 10.0), 2.0), 0.2, 0.5))", reflectivity: 1.0 })),
-                                ),
+                                new Union(
+                                    0.2,
+                                    [
+                                        new Translate(
+                                            new Vec3(0, -0.2, 0),
+                                            new Ground(new Material({ color: "vec3(clamp(mod(floor(point.x * 10.0) + floor(point.z * 10.0), 2.0), 0.2, 0.5))", reflectivity: 1.0 })),
+                                        ),
+                                        new Translate(
+                                            new Vec3(0.3, -0.2, -0.7),
+                                            new Sphere("sin(iTime * 2.0) * 0.025 + 0.05", new Material({ color: new Vec3(1, 0, 0), edge: 1.0 })),
+                                        ),
+                                    ]
+                                )
                             ]
                         )
                     )
