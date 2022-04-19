@@ -179,7 +179,7 @@ vec3 raytrace(vec3 ray) {
 			if (jumps-- >= 0) {
 				// Reflect!
 				#evaluate <reflectivity>
-				combinedReflectivity *= reflectivity; // TODO: fresnel
+				combinedReflectivity *= reflectivity * mix(0.2, 1.0, 1.0 - dot(-normal, ray));
 				ray = reflect(ray, normal);
 				//return (ray + vec3(1.0)) / 2.0;
 			}
