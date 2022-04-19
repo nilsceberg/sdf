@@ -115,14 +115,14 @@ vec3 reflectionRay(vec3 ray, vec3 normal) {
 }
 
 vec3 raytrace(vec3 ray) {
-	int iterations = JUMPS + 1;
+	int jumps = JUMPS;
 	float range = MAX_RANGE;
 	float bias = 0.0;
-	float reflectivity = 1.0;
+	float combinedReflectivity = 1.0;
 	vec3 finalColor = vec3(0.0);
 	vec3 point = vec3(0.0);
 
-	while (iterations-- > 0 && range > STEP_SIZE && reflectivity > 0.0) {
+	while (range > STEP_SIZE && combinedReflectivity > 0.0) {
 		vec3 stop = ray * range;
 		vec4 result = raymarch(point, stop, bias, range);
 		point = result.xyz;
@@ -179,12 +179,18 @@ vec3 raytrace(vec3 ray) {
 			}
 
 			color *= illumination * (1.0 - AMBIENT) + AMBIENT;
-			finalColor = valueMix(finalColor, diffuse(point, normal, color) * reflectivity);
+			finalColor = valueMix(finalColor, diffuse(point, normal, color) * combinedReflectivity);
 
-			// Reflect!
-			reflectivity *= 0.8; // TODO: fresnel
-			ray = reflectionRay(ray, normal);
-			//return (ray + vec3(1.0)) / 2.0;
+			if (jumps-- >= 0) {
+				// Reflect!
+				#evaluate <reflectivity>
+				combinedReflectivity *= reflectivity; // TODO: fresnel
+				ray = reflectionRay(ray, normal);
+				//return (ray + vec3(1.0)) / 2.0;
+			}
+			else {
+				break;
+			}
 		}
 	}
 

@@ -5,13 +5,14 @@ const identity = <T>(x: T) => x;
 
 const compose = (f: TransformFunction, g: TransformFunction) => (expr: string) => g(f(expr));
 
-type Property = "sdf" | "normal" | "color" | "edge";
+type Property = "sdf" | "normal" | "color" | "edge" | "reflectivity";
 
 const PropertyTypes: {[type: string]: string} = {
     "sdf": "float",
     "normal": "vec3",
     "color": "vec3",
     "edge": "float",
+    "reflectivity": "float",
 }
 
 interface Expr<T> {
@@ -68,23 +69,32 @@ Number.prototype.compile = function(): string {
     else return str + ".0";
 }
 
+interface MaterialProperties {
+    color: Expr<Vec3>;
+    edge: Expr<Float>;
+    reflectivity: Expr<Float>;
+}
 
 class Material {
-    color: Expr<Vec3>;
-    edgeGlow: Expr<Float> = 0.0;
+    properties: MaterialProperties;
 
-    static Default = new Material(new Vec3(1, 1, 1));
+    static Default = new Material();
 
-    constructor(color: Expr<Vec3>, edgeGlow: Expr<Float> = 0.0) {
-        this.color = color;
-        this.edgeGlow = edgeGlow;
+    constructor(properties?: Partial<MaterialProperties>) {
+        this.properties = {
+            color: properties?.color || new Vec3(1.0, 1.0, 1.0),
+            edge: properties?.edge || 0.0,
+            reflectivity: properties?.reflectivity || 0.0,
+        };
     }
 
     compile(transformer: TransformFunction, property: Property): string {
-        switch (property) {
-            case "color": return this.color.compile();
-            case "edge": return this.edgeGlow.compile();
-            default: throw new InvalidPropertyException(Material, property);
+        if (property in this.properties) {
+            // Sometimes you just gotta do what you gotta do.
+            return ((this.properties as { [key: string]: any })[property]).compile();
+        }
+        else {
+            throw new InvalidPropertyException(Material, property);
         }
     }
 }
@@ -309,6 +319,7 @@ class Union extends BinaryOperator {
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "edge":
+            case "reflectivity":
                 return `blend(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
@@ -331,6 +342,7 @@ class Difference extends BinaryOperator {
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "edge":
+            case "reflectivity":
                 return `blend(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
@@ -353,6 +365,7 @@ class Cut extends BinaryOperator {
             case "color":
                 return `blend3(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
             case "edge":
+            case "reflectivity":
                 return `blend(${lastIdentifier(property)}, ${shape.identifier(property)}, ${lastIdentifier("sdf")}, ${shape.identifier("sdf")}, ${this.identifier("sdf")}, ${this.smoothing.compile()})`;
         }
     }
@@ -417,14 +430,14 @@ function main() {
             new Cut(
                 0.01,
                 [
-                    new Sphere(1, new Material(new Vec3(0.2, 0.2, 0.2))),
+                    new Sphere(1, new Material({ color: new Vec3(0.2, 0.2, 0.2) })),
                     new Translate(
                         new Vec3(0, -0.2, 0),
                         new Union(0.08,
                             [
                                 new Translate(
-                                    new Vec3(0, 0.2, -0.7),
-                                    new Sphere(0.1),
+                                    new Vec3(-0.5, 0.0, -0.3),
+                                    new Sphere(0.1, new Material({ reflectivity: 1.0 })),
                                 ),
                                 new Translate(
                                     // 123 // TODO: this works too since TS does structural type checking...
@@ -433,31 +446,31 @@ function main() {
                                         [
                                             new Union(0.2,
                                                 [
-                                                    new Sphere(0.2, new Material(new Vec3(0, 0, 1))),
+                                                    new Sphere(0.2, new Material({ color: new Vec3(0, 0, 1) })),
                                                     new Translate(
                                                         new Vec3(0.4, 0.2, 0.0),
-                                                        new Sphere(0.5),
+                                                        new Sphere(0.5, new Material({ reflectivity: 0.0 })),
                                                     ),
                                                     new Translate(
                                                         new Vec3(-0.1, 0.3, 0.0),
-                                                        new Sphere("sin(iTime) * 0.1 + 0.15", new Material(new Vec3(1, 0, 0), 1.0)),
+                                                        new Sphere("sin(iTime) * 0.1 + 0.15", new Material({ color: new Vec3(1, 0, 0), edge: 1.0 })),
                                                     ),
                                                 ]
                                             ),
                                             new Translate(
                                                 new Vec3(0.4, 0.2, -0.2),
-                                                new Sphere(0.25, new Material(new Vec3(.3, .3, .3))),
+                                                new Sphere(0.25, new Material({ color: new Vec3(.3, .3, .3) })),
                                             ),
                                             new Translate(
                                                 new Vec3(0.4, 0.2, 0.2),
-                                                new Sphere(0.25, new Material(new Vec3(.3, .3, .3))),
+                                                new Sphere(0.25, new Material({ color: new Vec3(.3, .3, .3) })),
                                             ),
                                         ],
                                     ),
                                 ),
                                 new Translate(
                                     new Vec3(0, -0.2, 0),
-                                    new Ground(new Material("vec3(clamp(mod(floor(point.x * 10.0) + floor(point.z * 10.0), 2.0), 0.2, 0.5))")),
+                                    new Ground(new Material({ color: "vec3(clamp(mod(floor(point.x * 10.0) + floor(point.z * 10.0), 2.0), 0.2, 0.5))", reflectivity: 1.0 })),
                                 ),
                             ]
                         )
