@@ -1,3 +1,5 @@
+#define SHADERTOY
+
 // Misc
 const float EPSILON = 0.00001;
 
@@ -196,3 +198,15 @@ vec4 render(vec2 screenSpace) {
 	vec3 color = raytrace(normalize(vec3(screenSpace, 1.0)));
 	return vec4(color, 1.0);
 }
+
+#ifdef SHADERTOY
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+	// Normalized pixel coordinates (from -1 to 1 on y with x adjusted for aspect ratio)
+	float aspect = iResolution.x / iResolution.y;
+	vec2 xy = fragCoord/iResolution.xy * 2.0 - 1.0;
+	xy.x *= aspect;
+	
+	fragColor = render(xy);
+}
+#endif
