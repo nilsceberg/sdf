@@ -61,7 +61,7 @@ vec3 blend3(vec3 a, vec3 b, float sdfa, float sdfb, float sdf, float k) {
 
 vec3 sun() {
 #ifdef SHADERTOY
-	return 3.0 * vec3(cos(iTime), 1.0, sin(iTime));
+	return 3.0 * vec3(cos(iTime * 0.5), 1.0, sin(iTime * 0.5));
 #else
 	//return vec3(3.0, 3.0, 1.0);
 	return normalize(vec3(3.0, 3.0, 1.0));
@@ -94,7 +94,7 @@ vec4 raymarch(vec3 from, vec3 to, float sdfBias, inout float range) {
 	vec3 finalColor = vec3(0.0);
 	float minSdf = 100000.0;
 	
-	while (range > STEP_SIZE) {
+	while (range > EPSILON) {
 		float remaining = length(to - point);
 		#evaluate <sdf>
 		sdf += sdfBias;
@@ -125,13 +125,13 @@ vec3 raytrace(vec3 ray) {
 	vec3 finalColor = vec3(0.0);
 	vec3 point = vec3(0.0);
 
-	while (range > STEP_SIZE && combinedReflectivity > 0.0) {
+	while (combinedReflectivity > 0.0) {
 		vec3 stop = ray * range;
 		vec4 result = raymarch(point, stop, bias, range);
 		point = result.xyz;
 		float closest = result.w;
 		
-		if (range <= STEP_SIZE) {
+		if (range <= EPSILON) {
 			// Hit nothing.
 			break;
 		}
