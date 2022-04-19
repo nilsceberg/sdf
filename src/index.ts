@@ -453,7 +453,7 @@ function main() {
                                                     ),
                                                     new Translate(
                                                         new Vec3(-0.1, 0.3, 0.0),
-                                                        new Sphere("sin(iTime) * 0.1 + 0.15", new Material({ color: new Vec3(1, 0, 0), edge: 1.0 })),
+                                                        new Sphere("sin(iTime * 5.0) * 0.1 + 0.15", new Material({ color: new Vec3(1, 0, 0), edge: 1.0 })),
                                                     ),
                                                 ]
                                             ),

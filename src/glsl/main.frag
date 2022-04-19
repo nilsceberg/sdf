@@ -8,7 +8,7 @@ const float STEP_SIZE = 0.001;
 const float MAX_RANGE = 10.0;
 
 // Raytracing
-const float LIGHT_RAYS = 0.0;
+const float LIGHT_RAYS = 6.0;
 const int JUMPS = 1;
 
 // Lighting
@@ -59,9 +59,17 @@ vec3 blend3(vec3 a, vec3 b, float sdfa, float sdfb, float sdf, float k) {
 	return mix(a, b, t);
 }
 
-const vec3 SUN = normalize(vec3(3.0, 3.0, 1.0));
+vec3 sun() {
+#ifdef SHADERTOY
+	return 3.0 * vec3(cos(iTime), 1.0, sin(iTime));
+#else
+	//return vec3(3.0, 3.0, 1.0);
+	return normalize(vec3(3.0, 3.0, 1.0));
+#endif
+}
+
 vec3 diffuse(vec3 position, vec3 normal, vec3 color) {
-	return color * (dot(SUN - position, normal) + 1.0) / 2.0;
+	return color * (dot(normalize(sun() - position), normal) + 1.0) / 2.0;
 }
 
 vec3 edgeGlowAccumulation(float sdf, float edge, vec3 color) {
@@ -145,7 +153,7 @@ vec3 raytrace(vec3 ray) {
 			float illumination = 0.0; // ambient
 			float maxIllumination = 0.0;
 
-			vec3 light = SUN;
+			vec3 light = sun();
 			vec3 lightDir = light - point;
 			float lightSize = 0.05;
 
