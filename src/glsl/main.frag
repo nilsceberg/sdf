@@ -107,13 +107,6 @@ vec4 raymarch(vec3 from, vec3 to, float sdfBias, inout float range) {
 	return vec4(point, minSdf);
 }
 
-vec3 reflectionRay(vec3 ray, vec3 normal) {
-	// Reflection angle
-	vec3 reflectionPlaneNormal = normalize(cross(normal, cross(normal, ray)));
-	float projection = dot(ray, reflectionPlaneNormal);
-	return -(ray - 2.0 * projection * reflectionPlaneNormal);
-}
-
 vec3 raytrace(vec3 ray) {
 	int jumps = JUMPS;
 	float range = MAX_RANGE;
@@ -185,7 +178,7 @@ vec3 raytrace(vec3 ray) {
 				// Reflect!
 				#evaluate <reflectivity>
 				combinedReflectivity *= reflectivity; // TODO: fresnel
-				ray = reflectionRay(ray, normal);
+				ray = reflect(ray, normal);
 				//return (ray + vec3(1.0)) / 2.0;
 			}
 			else {
